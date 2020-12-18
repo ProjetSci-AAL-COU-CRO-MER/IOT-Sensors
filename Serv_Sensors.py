@@ -8,23 +8,41 @@ import threading
 import serial
 import pymongo
 import json
+import multiprocessing as mp
 
-
+# *****ENV VAR*****
+key_code = 55
+split_value = "/"
+checksum_length = 2
+# id pour envoi unicast
+idMicrobit = "56"
+# check is received right
+waiting = "waiting"
+notReceived = "notReceived"
+wellReceived = "check"
+finished = "end"
+start = "start"
+# value:"wellReceived","notReceived","finished","waiting"
 HOST           = "0.0.0.0"
 UDP_PORT       = 10001
 FILENAME        = "values.txt"
 LAST_VALUE      = ""
+sem = mp.Lock()
+# ****************
+
 
 class ThreadedUDPRequestHandler(socketserver.BaseRequestHandler):
 
     def handle(self):
         data = self.request[0].strip()
-        #data = data.decode("utf-8")
         socket = self.request[1]
         current_thread = threading.current_thread()
         print("{}: client: {}, wrote: {}".format(current_thread.name, self.client_address, data.decode("utf-8")))
         if data != "":
-                sendUARTMessage(data) # Send message through UART
+                sendProtocole(data.decode("utf-8")) # Send message through UART
+                print("DONE")
+                sem.release()
+
 
 
 
@@ -33,7 +51,7 @@ class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer):
 
 
 # send serial message 
-SERIALPORT = "/dev/ttyACM0"
+SERIALPORT = "/dev/ttyACM1"
 BAUDRATE = 115200
 ser = serial.Serial()
 
@@ -59,9 +77,79 @@ def initUART():
 
 
 
-def sendUARTMessage(msg):
-    ser.write(msg)
-    print("Message <" + msg.decode("utf-8") + "> sent to micro-controller." )
+def sendUARTMessage(msg): 
+    msg = msg+","
+    ser.write(msg.encode())
+    print("Message <" + msg + "> sent to micro-controller." )
+
+def spliceString(string_to_splice: str, length: int):
+    index = 0
+    splice_array = []
+    while True:
+        tmp_string = ""
+        tmp_index = index + length
+        while index < tmp_index:
+            tmp_string += string_to_splice[index]
+            if len(string_to_splice) == index+1:
+                splice_array.append(tmp_string)
+                return splice_array
+            index += 1
+        splice_array.append(tmp_string)
+
+
+def calcul_checksum(string_to_check: str):
+    check_sum = 0
+    modulo = 1
+    for i in range(checksum_length):
+        modulo = modulo * 10
+    for index in range(len(string_to_check)):
+        check_sum = check_sum + ord(string_to_check[index])
+        check_sum = check_sum % modulo
+    return check_sum
+
+
+def readSerial():
+        data_str =""
+        while(True):
+                tmp = ser.read(1)
+                #print (tmp)
+                tmp = tmp.decode("utf-8")
+                if tmp == '\n':
+                        print("finale: ",data_str)
+                        return data_str
+                elif tmp == " " or tmp == '\r':
+                        pass
+                else:
+                        data_str = data_str + tmp
+
+                        
+
+
+def sendProtocole(string_to_send: str):
+    array_string = spliceString(
+        string_to_send, 19 - len(idMicrobit) - 2 - checksum_length)
+    array_string.insert(0, start)
+    array_string.append(finished)
+    index = 0
+    array_send = []
+    while True:
+        time.sleep(2)
+        tmp = idMicrobit + split_value + \
+            array_string[index] + split_value + \
+            str(calcul_checksum(array_string[index]))
+        array_send.append(tmp)
+        sendUARTMessage(tmp)
+        response = readSerial()
+        check_received_value = response
+        print("response:",check_received_value)
+        print("'"+check_received_value+"'")
+        if check_received_value == wellReceived:
+            index += 1
+        elif check_received_value == notReceived:
+            pass
+        elif check_received_value == finished:
+            print("finished protocole")
+            break
 
 
 # Main program logic follows:
@@ -76,12 +164,12 @@ if __name__ == '__main__':
         try:
                 server_thread.start()
                 print("Server started at {} port {}".format(HOST, UDP_PORT))
-                byte_message = bytes("Hello, World!", "utf-8")
+                byte_message = bytes("temp = 58", "utf-8")
                 opened_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 while ser.isOpen() : 
-                        time.sleep(1)
+                        sem.acquire()
                         opened_socket.sendto(byte_message, ("127.0.0.1", 10001))
-                        print ("Message envoyé")
+                        time.sleep(1)
         except (KeyboardInterrupt, SystemExit):
                 server.shutdown()
                 server.server_close()
