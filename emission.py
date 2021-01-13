@@ -51,7 +51,7 @@ class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer):
 
 
 # send serial message 
-SERIALPORT = "/dev/ttyACM1"
+SERIALPORT = "/dev/ttyACM0"
 BAUDRATE = 115200
 ser = serial.Serial()
 
@@ -78,7 +78,7 @@ def initUART():
 
 
 def sendUARTMessage(msg): 
-    msg = msg+","
+    msg = msg+";"
     ser.write(msg.encode())
     print("Message <" + msg + "> sent to micro-controller." )
 
@@ -112,10 +112,8 @@ def readSerial():
         data_str =""
         while(True):
                 tmp = ser.read(1)
-                #print (tmp)
                 tmp = tmp.decode("utf-8")
                 if tmp == '\n':
-                        print("finale: ",data_str)
                         return data_str
                 elif tmp == " " or tmp == '\r':
                         pass
@@ -127,7 +125,8 @@ def readSerial():
 
 def sendProtocole(string_to_send: str):
     array_string = spliceString(
-        string_to_send, 19 - len(idMicrobit) - 2 - checksum_length)
+        string_to_send, 18 - len(idMicrobit) - 2 - checksum_length)
+    print(array_string)
     array_string.insert(0, start)
     array_string.append(finished)
     index = 0
@@ -141,10 +140,11 @@ def sendProtocole(string_to_send: str):
         sendUARTMessage(tmp)
         response = readSerial()
         check_received_value = response
-        print("response:",check_received_value)
+        #print("response:",check_received_value)
         print("'"+check_received_value+"'")
+        index += 1
         if check_received_value == wellReceived:
-            index += 1
+            pass
         elif check_received_value == notReceived:
             pass
         elif check_received_value == finished:
@@ -164,7 +164,7 @@ if __name__ == '__main__':
         try:
                 server_thread.start()
                 print("Server started at {} port {}".format(HOST, UDP_PORT))
-                byte_message = bytes("temp = 58", "utf-8")
+                byte_message = bytes("coucou moi c est loris et toi ?", "utf-8")
                 opened_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 while ser.isOpen() : 
                         sem.acquire()
